@@ -1,0 +1,232 @@
+{
+  "uid": "ebpf-gpu-obs",
+  "title": "eBPF GPU Observability",
+  "description": "Real-time GPU telemetry captured via eBPF uprobes on libcudart.so — KubeCon Europe 2026 Demo",
+  "tags": ["gpu", "ebpf", "cuda", "kubernetes"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "id": 1,
+      "title": "🚀 GPU Utilization (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "percent",
+          "min": 0, "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "gpu_utilization_percent",
+          "legendFormat": "GPU {{gpu_id}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "🧠 GPU Memory Used vs Total",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "gpu_memory_used_bytes",
+          "legendFormat": "Used GPU {{gpu_id}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "gpu_memory_total_bytes",
+          "legendFormat": "Total GPU {{gpu_id}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "📈 CUDA Kernel Launches / sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(gpu_cuda_kernel_launches_total[30s])",
+          "legendFormat": "{{workload}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "📦 CUDA Bytes Allocated by Workload",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "bytes"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "gpu_cuda_allocated_bytes",
+          "legendFormat": "{{workload}} (PID {{pid}})"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "⏱ Kernel Execution Duration (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.50, rate(gpu_kernel_duration_seconds_bucket[1m]))",
+          "legendFormat": "p50 {{workload}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, rate(gpu_kernel_duration_seconds_bucket[1m]))",
+          "legendFormat": "p95 {{workload}}"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.99, rate(gpu_kernel_duration_seconds_bucket[1m]))",
+          "legendFormat": "p99 {{workload}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "🚨 CUDA Errors / sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "unit": "ops"
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(gpu_cuda_errors_total[1m])",
+          "legendFormat": "{{error_code}} / {{workload}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Current GPU Utilization",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "avg(gpu_utilization_percent)",
+          "legendFormat": "avg"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Total CUDA Allocations (all workloads)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "color": { "mode": "thresholds" } }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(gpu_cuda_allocated_bytes)",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Total Kernel Launches",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 24 },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "thresholds" } }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(gpu_cuda_kernel_launches_total)",
+          "legendFormat": "total"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Total CUDA Errors",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 24 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "fixedColor": "red", "mode": "fixed" }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(gpu_cuda_errors_total)",
+          "legendFormat": "total"
+        }
+      ]
+    }
+  ]
+}

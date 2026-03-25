@@ -1,0 +1,357 @@
+---
+# ─── Namespace ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-observability
+---
+# ─── Prometheus RBAC ──────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: gpu-observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gpu-obs-prometheus
+rules:
+- apiGroups: [""]
+  resources: [nodes, nodes/proxy, services, endpoints, pods]
+  verbs: [get, list, watch]
+- nonResourceURLs: ["/metrics"]
+  verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gpu-obs-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gpu-obs-prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: gpu-observability
+---
+# ─── Prometheus Config ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: gpu-observability
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    scrape_configs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [gpu-observability]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            target_label: __address__
+            regex: (.+)
+            replacement: ${1}
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+---
+# ─── Prometheus Deployment ────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: gpu-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.51.0
+        args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2h"]
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: gpu-observability
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+---
+# ─── Grafana Datasource & Dashboard Provisioning ──────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: gpu-observability
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: Prometheus
+      type: prometheus
+      uid: prometheus
+      access: proxy
+      url: http://prometheus:9090
+      isDefault: true
+      editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: gpu-observability
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+    - name: gpu-observability
+      type: file
+      updateIntervalSeconds: 10
+      options:
+        path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-gpu
+  namespace: gpu-observability
+data:
+  gpu-observability.json: |
+    {
+      "uid": "ebpf-gpu-obs",
+      "title": "eBPF GPU Observability",
+      "description": "Real-time GPU telemetry captured via eBPF uprobes on libcudart.so — KubeCon Europe 2026 Demo",
+      "tags": ["gpu", "ebpf", "cuda", "kubernetes"],
+      "timezone": "browser",
+      "refresh": "5s",
+      "time": { "from": "now-15m", "to": "now" },
+      "schemaVersion": 38,
+      "panels": [
+        {
+          "id": 1,
+          "title": "🚀 GPU Utilization (%)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": {
+            "defaults": { "unit": "percent", "min": 0, "max": 100,
+              "color": { "mode": "palette-classic" },
+              "thresholds": { "mode": "absolute", "steps": [{"color":"green","value":null},{"color":"orange","value":70},{"color":"red","value":90}] }
+            }
+          },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "gpu_utilization_percent", "legendFormat": "GPU {{gpu_id}}" }]
+        },
+        {
+          "id": 2,
+          "title": "🧠 GPU Memory Used vs Total",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" } } },
+          "targets": [
+            { "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "gpu_memory_used_bytes", "legendFormat": "Used GPU {{gpu_id}}" },
+            { "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "gpu_memory_total_bytes", "legendFormat": "Total GPU {{gpu_id}}" }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "📈 CUDA Kernel Launches / sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "ops", "color": { "mode": "palette-classic" } } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "rate(gpu_cuda_kernel_launches_total[30s])", "legendFormat": "{{workload}}" }]
+        },
+        {
+          "id": 4,
+          "title": "📦 CUDA Bytes Allocated by Workload",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" } } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "gpu_cuda_allocated_bytes", "legendFormat": "{{workload}} (PID {{pid}})" }]
+        },
+        {
+          "id": 5,
+          "title": "⏱ Kernel Execution Duration (p50 / p95 / p99)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 16, "x": 0, "y": 16 },
+          "fieldConfig": { "defaults": { "unit": "s", "color": { "mode": "palette-classic" } } },
+          "targets": [
+            { "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "histogram_quantile(0.50, rate(gpu_kernel_duration_seconds_bucket[1m]))", "legendFormat": "p50 {{workload}}" },
+            { "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "histogram_quantile(0.95, rate(gpu_kernel_duration_seconds_bucket[1m]))", "legendFormat": "p95 {{workload}}" },
+            { "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "histogram_quantile(0.99, rate(gpu_kernel_duration_seconds_bucket[1m]))", "legendFormat": "p99 {{workload}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "🚨 CUDA Errors / sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+          "fieldConfig": { "defaults": { "unit": "ops", "color": { "fixedColor": "red", "mode": "fixed" } } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "rate(gpu_cuda_errors_total[1m])", "legendFormat": "{{error_code}} / {{workload}}" }]
+        },
+        {
+          "id": 7, "title": "Avg GPU Utilization",
+          "type": "gauge",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 24 },
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
+            "thresholds": { "mode": "absolute", "steps": [{"color":"green","value":null},{"color":"orange","value":70},{"color":"red","value":90}] }
+          } },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "avg(gpu_utilization_percent)", "legendFormat": "avg" }]
+        },
+        {
+          "id": 8, "title": "Total CUDA Allocated",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 24 },
+          "fieldConfig": { "defaults": { "unit": "bytes" } },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(gpu_cuda_allocated_bytes)", "legendFormat": "total" }]
+        },
+        {
+          "id": 9, "title": "Total Kernel Launches",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 24 },
+          "fieldConfig": { "defaults": { "unit": "short" } },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(gpu_cuda_kernel_launches_total)", "legendFormat": "total" }]
+        },
+        {
+          "id": 10, "title": "Total CUDA Errors",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 24 },
+          "fieldConfig": { "defaults": { "unit": "short", "color": { "fixedColor": "red", "mode": "fixed" } } },
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "targets": [{ "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(gpu_cuda_errors_total)", "legendFormat": "total" }]
+        }
+      ]
+    }
+---
+# ─── Grafana Deployment ───────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: gpu-observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:10.4.0
+        ports:
+        - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "kubecon2026"
+        - name: GF_AUTH_ANONYMOUS_ENABLED
+          value: "true"
+        - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+          value: "Viewer"
+        - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
+          value: "/var/lib/grafana/dashboards/gpu-observability.json"
+        volumeMounts:
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboard-provider
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: dashboard-files
+          mountPath: /var/lib/grafana/dashboards
+      volumes:
+      - name: datasources
+        configMap:
+          name: grafana-datasources
+      - name: dashboard-provider
+        configMap:
+          name: grafana-dashboard-provider
+      - name: dashboard-files
+        configMap:
+          name: grafana-dashboard-gpu
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: gpu-observability
+spec:
+  type: LoadBalancer
+  selector:
+    app: grafana
+  ports:
+  - port: 80
+    targetPort: 3000
+---
+# ─── Mock eBPF Agent (DaemonSet) ─────────────────────────────────────────────
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-tracer
+  namespace: gpu-observability
+  labels:
+    app: gpu-tracer
+spec:
+  selector:
+    matchLabels:
+      app: gpu-tracer
+  template:
+    metadata:
+      labels:
+        app: gpu-tracer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      containers:
+      - name: gpu-tracer
+        image: ttl.sh/ebpf-gpu-mock-agent:24h
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: metrics
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"

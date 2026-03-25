@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dummy-gpu-workload
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dummy-gpu-workload
+  template:
+    metadata:
+      labels:
+        app: dummy-gpu-workload
+    spec:
+      containers:
+      - name: dummy-gpu-workload
+        # In a real environment, you'd push this to a registry
+        image: ghcr.io/brandon/dummy-gpu:latest
+        imagePullPolicy: IfNotPresent
+        # We simulate the workload by mounting the host's CUDA lib
+        # so the python ctypes script can find it and execute cudaMalloc
+        volumeMounts:
+        - name: cuda-lib
+          mountPath: /usr/local/cuda/lib64
+          readOnly: true
+        env:
+        - name: LIBCUDART_PATH
+          value: /usr/local/cuda/lib64/libcudart.so
+      volumes:
+      - name: cuda-lib
+        hostPath:
+          path: /usr/local/cuda/lib64

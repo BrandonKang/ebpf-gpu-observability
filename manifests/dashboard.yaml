@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-provisioning
+  namespace: default
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: "default"
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 10
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-gpu
+  namespace: default
+data:
+  gpu-observability.json: |
+    {
+      "title": "GPU Observability (eBPF)",
+      "panels": [
+        {
+          "title": "CUDA Kernel Launches / Sec",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "rate(gpu_cuda_kernel_launches_total[1m])",
+              "legendFormat": "PID: {{pid}}"
+            }
+          ],
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 }
+        },
+        {
+          "title": "CUDA Allocated Bytes",
+          "type": "timeseries",
+          "datasource": "Prometheus",
+          "targets": [
+            {
+              "expr": "gpu_cuda_allocated_bytes",
+              "legendFormat": "PID: {{pid}}"
+            }
+          ],
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 }
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 38,
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      }
+    }

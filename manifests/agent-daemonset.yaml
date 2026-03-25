@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-tracer
+  namespace: default
+  labels:
+    app: gpu-tracer
+spec:
+  selector:
+    matchLabels:
+      app: gpu-tracer
+  template:
+    metadata:
+      labels:
+        app: gpu-tracer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+    spec:
+      hostPID: true
+      containers:
+      - name: gpu-tracer
+        image: ghcr.io/brandon/gpu-tracer:latest
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+          capabilities:
+            add: ["SYS_ADMIN", "BPF", "PERFMON"]
+        env:
+        # Depending on how the LKE nodes are configured, libcudart might be somewhere else or mounted into containers
+        # Try a few common host locations, or use the container's path if we trace across containers
+        # For demo purposes, assuming typical host path /usr/local/cuda/lib64/libcudart.so
+        - name: LIBCUDART_PATH
+          value: /host/usr/local/cuda/lib64/libcudart.so
+        ports:
+        - containerPort: 8000
+          name: metrics
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+          readOnly: true
+        - name: sys
+          mountPath: /sys
+          readOnly: true
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /
+      - name: sys
+        hostPath:
+          path: /sys
