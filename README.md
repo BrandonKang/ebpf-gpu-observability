@@ -22,7 +22,7 @@ kubectl get svc grafana -n gpu-observability
 # Open http://<EXTERNAL-IP> in your browser
 ```
 
-**Live demo dashboard:** [http://172.236.197.220/d/ebpf-gpu-obs](http://172.236.197.220/d/ebpf-gpu-obs/ebpf-gpu-observability)
+**Live demo dashboard (Deprecated) :** [http://172.236.197.220/d/ebpf-gpu-obs](http://172.236.197.220/d/ebpf-gpu-obs/ebpf-gpu-observability)
 
 ---
 
