@@ -25,8 +25,7 @@ kubectl get svc grafana -n gpu-observability
 **Live demo dashboard (Deprecated) :** [http://172.236.197.220/d/ebpf-gpu-obs](http://172.236.197.220/d/ebpf-gpu-obs/ebpf-gpu-observability)
 
 ### 🎬 Demo Video
-
-[Watch the eBPF GPU Observability demo](./assets/ebpf_demo.mov)
+![eBPF GPU Observability Demo](./assets/ebpf_demo.gif)
 ---
 
 ## 📚 Documentation
