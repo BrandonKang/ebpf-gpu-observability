@@ -52,7 +52,7 @@ BPF hash map → Go userspace poller
 Prometheus (5s scrape) → Grafana (LoadBalancer, public)
 ```
 
-The agent uses **cilium/ebpf with CO-RE** — compiles once, runs everywhere without kernel headers. Compatible with Linode Kubernetes Engine (LKE).
+The agent uses **cilium/ebpf with CO-RE** — compiles once, runs everywhere without kernel headers. Compatible with Akamai Linode Kubernetes Engine (LKE) Enterprise version.
 
 ---
 
